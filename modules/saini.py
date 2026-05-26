@@ -21,6 +21,19 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64decode
 
+# ------------------------------------------------------------
+# ✅ NEW: Caption truncator (Telegram limit = 1024 chars)
+# ------------------------------------------------------------
+def truncate_caption(caption: str, max_len: int = 1000) -> str:
+    """Safely truncate caption to max_len characters."""
+    if caption is None:
+        return ""
+    if len(caption) <= max_len:
+        return caption
+    # Simple truncation – breaks HTML tags if any, but avoids API error
+    return caption[:max_len-3] + "..."
+# ------------------------------------------------------------
+
 def duration(filename):
     result = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
                              "format=duration", "-of",
@@ -249,10 +262,12 @@ async def download_video(url,cmd, name):
 
 
 async def send_doc(bot: Client, m: Message, cc, ka, cc1, prog, count, name, channel_id):
+    # ✅ Truncate caption before sending
+    safe_caption = truncate_caption(cc1)
     reply = await bot.send_message(channel_id, f"Downloading pdf:\n<pre><code>{name}</code></pre>")
     time.sleep(1)
     start_time = time.time()
-    await bot.send_document(ka, caption=cc1)
+    await bot.send_document(ka, caption=safe_caption)
     count+=1
     await reply.delete (True)
     time.sleep(1)
@@ -310,10 +325,13 @@ async def send_vid(bot: Client, m: Message, cc, filename, vidwatermark, thumb, n
     dur = int(duration(w_filename))
     start_time = time.time()
 
+    # ✅ TRUNCATE CAPTION BEFORE SENDING (Fixes MEDIA_CAPTION_TOO_LONG error)
+    safe_caption = truncate_caption(cc)
+
     try:
-        await bot.send_video(channel_id, w_filename, caption=cc, supports_streaming=True, height=720, width=1280, thumb=thumbnail, duration=dur, progress=progress_bar, progress_args=(reply, start_time))
+        await bot.send_video(channel_id, w_filename, caption=safe_caption, supports_streaming=True, height=720, width=1280, thumb=thumbnail, duration=dur, progress=progress_bar, progress_args=(reply, start_time))
     except Exception:
-        await bot.send_document(channel_id, w_filename, caption=cc, progress=progress_bar, progress_args=(reply, start_time))
+        await bot.send_document(channel_id, w_filename, caption=safe_caption, progress=progress_bar, progress_args=(reply, start_time))
     os.remove(w_filename)
     await reply.delete(True)
     await reply1.delete(True)
