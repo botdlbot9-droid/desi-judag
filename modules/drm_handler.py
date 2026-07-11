@@ -34,7 +34,7 @@ import aiofiles
 import zipfile
 import shutil
 
-# Try importing ffmpeg, but don't fail if not available
+# FFmpeg optional – agar nahi hai toh error nahi aayega
 try:
     import ffmpeg
 except ImportError:
@@ -281,14 +281,14 @@ async def drm_handler(bot: Client, m: Message):
                         namef = f'{name1[:60]} {endfilename}'
 
             # ============================================================
-            # ========== CLASS PLUS DRM HANDLER - RENDER COMPATIBLE =======
+            # ========== CLASS PLUS DRM HANDLER - FAST REMUX =============
             # ============================================================
             
             if 'classplusapp' in url or "testbook.com" in url or "classplusapp.com/drm" in url or "media-cdn.classplusapp.com/drm" in url:
                 try:
                     print(f"🔐 Processing ClassPlus URL: {url[:100]}...")
                     
-                    # ========== CONTENT ID EXTRACT KARO ==========
+                    # ---------- Extract contentId ----------
                     if '&contentHashIdl=' in url:
                         url, contentId = url.split('&contentHashIdl=')
                     elif 'contentHashIdl=' in url:
@@ -303,12 +303,10 @@ async def drm_handler(bot: Client, m: Message):
                         contentId = parts[1].split('&')[0] if '&' in parts[1] else parts[1]
                     else:
                         contentId = url.split('/')[-1].split('?')[0]
-                    
-                    # Clean contentId
                     contentId = contentId.split('&')[0].split('?')[0].split('#')[0]
                     print(f"🆔 Content ID: {contentId}")
                     
-                    # ========== API HEADERS ==========
+                    # ---------- API Headers ----------
                     headers = {
                         'host': 'api.classplusapp.com',
                         'x-access-token': cptoken,
@@ -325,13 +323,12 @@ async def drm_handler(bot: Client, m: Message):
                         'webengage-luid': '00000187-6fe4-5d41-a530-26186858be4c',
                         'accept-encoding': 'gzip'
                     }
-                    
                     params = {
                         'contentId': contentId,
                         'offlineDownload': "false"
                     }
-
-                    # ========== API CALL ==========
+                    
+                    # ---------- API Call ----------
                     api_response = requests.get(
                         "https://api.classplusapp.com/cams/uploader/video/jw-signed-url",
                         params=params,
@@ -340,40 +337,26 @@ async def drm_handler(bot: Client, m: Message):
                     res = api_response.json()
                     print(f"📦 API Response Keys: {list(res.keys())}")
                     
-                    # ========== URL EXTRACT KARO ==========
+                    # ---------- Get manifest URL ----------
                     manifest_url = None
-                    is_drm = False
-                    
-                    # Check for DRM URLs
                     if 'drmUrls' in res and res['drmUrls']:
-                        is_drm = True
                         manifest_url = res['drmUrls'].get('manifestUrl')
                         if not manifest_url:
                             manifest_url = res['drmUrls'].get('manifest')
-                        if not manifest_url:
-                            for key in ['manifestUrl', 'manifest', 'mpd']:
-                                if key in res['drmUrls']:
-                                    manifest_url = res['drmUrls'][key]
-                                    break
-                    
-                    # If no DRM, get normal URL
                     if not manifest_url:
                         manifest_url = res.get('url')
-                        if not manifest_url:
-                            for key in ['url', 'videoUrl', 'source']:
-                                if key in res:
-                                    manifest_url = res[key]
-                                    break
-                    
+                    if not manifest_url:
+                        for key in ['url', 'videoUrl', 'source']:
+                            if key in res:
+                                manifest_url = res[key]
+                                break
                     if not manifest_url:
                         raise Exception("No video URL found in API response")
                     
                     print(f"📥 Manifest URL: {manifest_url[:100]}...")
                     
-                    # ========== RENDER.COM PE SIRF YT-DLP USE KARO ==========
-                    print("📥 Downloading with yt-dlp (Render compatible)...")
-                    
-                    # yt-dlp se video download
+                    # ---------- Download with yt-dlp ----------
+                    print("📥 Downloading with yt-dlp...")
                     ydl_opts = {
                         'outtmpl': f'{name}.mp4',
                         'merge_output_format': 'mp4',
@@ -382,58 +365,33 @@ async def drm_handler(bot: Client, m: Message):
                         'quiet': True,
                         'no_warnings': True,
                         'ignoreerrors': True,
-                        'extractor_args': {
-                            'generic': {
-                                'no_playlist': ['yes']
-                            }
-                        }
                     }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([manifest_url])
                     
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            ydl.download([manifest_url])
-                    except Exception as ydl_error:
-                        print(f"⚠️ yt-dlp error: {ydl_error}")
-                        # Try with different options
-                        ydl_opts2 = {
-                            'outtmpl': f'{name}.mp4',
-                            'merge_output_format': 'mp4',
-                            'allow_unplayable_formats': True,
-                            'fixup': 'detect_or_make_mp4',
-                            'quiet': True,
-                            'no_warnings': True,
-                        }
-                        with yt_dlp.YoutubeDL(ydl_opts2) as ydl:
-                            ydl.download([manifest_url])
-                    
-                    # Check if file downloaded
+                    # ---------- FAST REMUX (no re-encode) ----------
                     if os.path.exists(f"{name}.mp4"):
-                        print(f"✅ Video downloaded: {name}.mp4")
-                        url = f"{name}.mp4"
+                        print("🛠️ Fixing container with faststart (remux)...")
+                        fixed_file = f"fixed_{name}.mp4"
+                        # Only copy streams, no re-encoding
+                        fix_cmd = f'ffmpeg -i "{name}.mp4" -c copy -movflags +faststart "{fixed_file}" -y'
+                        os.system(fix_cmd)
                         
-                        # ========== GREEN LINE FIX - FFMPEG SE ==========
-                        # Render pe FFmpeg available hai, use karo
-                        try:
-                            print("🛠️ Fixing green line with ffmpeg...")
-                            fixed_file = f"fixed_{name}.mp4"
-                            fix_cmd = f'ffmpeg -i "{name}.mp4" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:a copy -pix_fmt yuv420p -movflags +faststart "{fixed_file}" -y'
-                            os.system(fix_cmd)
-                            
-                            if os.path.exists(fixed_file):
-                                os.remove(f"{name}.mp4")
-                                os.rename(fixed_file, f"{name}.mp4")
-                                print(f"✅ Green line fixed: {name}.mp4")
-                            else:
-                                print("⚠️ FFmpeg fix failed, using original")
-                        except Exception as ff_error:
-                            print(f"⚠️ FFmpeg error: {ff_error}")
+                        if os.path.exists(fixed_file):
+                            os.remove(f"{name}.mp4")
+                            os.rename(fixed_file, f"{name}.mp4")
+                            print(f"✅ Remux successful: {name}.mp4")
+                            url = f"{name}.mp4"
+                        else:
+                            print("⚠️ Remux failed, using original file")
+                            url = f"{name}.mp4"
                     else:
                         print("❌ Download failed, using original URL")
                         url = manifest_url
-                            
+                        
                 except Exception as e:
                     print(f"❌ ClassPlus Error: {e}")
-                    # Fallback - try yt-dlp directly
+                    # Fallback: try yt-dlp directly
                     try:
                         ydl_opts = {
                             'outtmpl': f'{name}.mp4',
