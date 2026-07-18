@@ -22,7 +22,6 @@ motor
 pytz
 aiohttp
 aiofiles
-pytz
 pillow
 m3u8
 umongo==3.1.0
@@ -50,3 +49,8 @@ google-auth-httplib2
 google-api-python-client
 ffmpeg-python
 setuptools==68.0.0
+
+# ========== NEW ADDITIONS ==========
+pywidevine>=1.8.0
+protobuf>=3.20.0,<4.0.0
+lxml>=4.9.0
