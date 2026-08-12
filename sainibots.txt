@@ -22,6 +22,7 @@ motor
 pytz
 aiohttp
 aiofiles
+pytz
 pillow
 m3u8
 umongo==3.1.0
@@ -50,7 +51,14 @@ google-api-python-client
 ffmpeg-python
 setuptools==68.0.0
 
-# ========== NEW ADDITIONS ==========
-pywidevine>=1.8.0
-protobuf>=3.20.0,<4.0.0
-lxml>=4.9.0
+# ==================== NEW DEPENDENCIES FOR WIDEVINE CDM ====================
+pywidevine==1.8.0
+pyyaml==6.0.2
+pyasn1==0.5.1
+pyasn1-modules==0.3.0
+rsa==4.9
+cachetools==5.3.2
+googleapis-common-protos==1.60.0
+protobuf==4.25.0
+grpcio==1.60.0
+grpcio-tools==1.60.0
